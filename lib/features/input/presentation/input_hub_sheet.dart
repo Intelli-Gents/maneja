@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:maneja/features/input/presentation/tap_entry_screen.dart';
-import 'package:maneja/features/input/presentation/text_entry_screen.dart';
+import 'package:maneja/features/input/presentation/manual_sale_screen.dart';
 import 'package:maneja/features/input/presentation/voice_entry_screen.dart';
 
 class InputHubSheet extends StatelessWidget {
@@ -66,13 +66,13 @@ class InputHubSheet extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     _OptionButton(
-                      label: 'Text',
-                      icon: Icons.keyboard_rounded,
+                      label: 'Manual',
+                      icon: Icons.edit_note_rounded,
                       onTap: () {
                         Navigator.of(context).pop();
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => const TextEntryScreen(),
+                            builder: (_) => const ManualSaleScreen(),
                             fullscreenDialog: true,
                           ),
                         );

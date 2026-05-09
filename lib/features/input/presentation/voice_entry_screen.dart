@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:maneja/features/home/providers/home_providers.dart';
-import 'package:maneja/services/api_parser_service.dart';
+import 'package:maneja/models/confirm_and_record_response.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 class VoiceEntryScreen extends ConsumerStatefulWidget {
   const VoiceEntryScreen({super.key});
@@ -11,76 +15,157 @@ class VoiceEntryScreen extends ConsumerStatefulWidget {
 }
 
 class _VoiceEntryScreenState extends ConsumerState<VoiceEntryScreen> {
-  bool _recording = false;
-  String? _mockTranscript;
-  ParsedInputDto? _parsed;
+  final _recorder = AudioRecorder();
+  final _transcriptController = TextEditingController();
 
-  Future<void> _toggleRecord() async {
+  bool _isRecording = false;
+  bool _isTranscribing = false;
+  bool _isRecordingToBackend = false;
+
+  File? _recordedFile;
+  String? _transcribedText;
+  ConfirmAndRecordResponse? _result;
+
+  @override
+  void dispose() {
+    _transcriptController.dispose();
+    _recorder.dispose();
+    super.dispose();
+  }
+
+  Future<File> _newTempRecordingFile() async {
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/maneja_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    return File(path);
+  }
+
+  Future<void> _startRecording() async {
+    final hasPerm = await _recorder.hasPermission();
+    if (!hasPerm) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone permission is required.')),
+      );
+      return;
+    }
+
+    final file = await _newTempRecordingFile();
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100),
+      path: file.path,
+    );
+
     setState(() {
-      _recording = !_recording;
+      _isRecording = true;
+      _recordedFile = file;
+      _transcribedText = null;
+      _result = null;
+      _transcriptController.text = '';
+    });
+  }
+
+  Future<void> _stopRecordingAndTranscribe() async {
+    final path = await _recorder.stop();
+    final file = path == null ? _recordedFile : File(path);
+
+    setState(() {
+      _isRecording = false;
+      _recordedFile = file;
     });
 
-    if (!_recording) {
-      // Simulate a fixed transcript for now.
-      const transcript = 'I sold two sodas for 4000';
-      final parser = ref.read(parserApiServiceProvider);
-      try {
-        final parsed = await parser.parseInput(text: transcript, source: 'voice');
+    if (file == null) return;
+
+    setState(() {
+      _isTranscribing = true;
+    });
+
+    try {
+      final voiceApi = ref.read(voiceApiServiceProvider);
+      final resp = await voiceApi.transcribe(audioFile: file);
+      setState(() {
+        _transcribedText = resp.text;
+        _transcriptController.text = resp.text;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Transcription failed: $e')),
+      );
+    } finally {
+      if (mounted) {
         setState(() {
-          _mockTranscript = transcript;
-          _parsed = parsed;
+          _isTranscribing = false;
         });
-      } catch (_) {
-        if (!mounted) return;
-        setState(() {
-          _mockTranscript = transcript;
-          _parsed = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to parse transcript.')),
-        );
       }
     }
   }
 
-  Future<void> _handleConfirm() async {
-    final parsed = _parsed;
-    if (parsed == null) return;
+  Future<void> _toggleRecord() async {
+    if (_isTranscribing || _isRecordingToBackend) return;
+    if (_isRecording) {
+      await _stopRecordingAndTranscribe();
+      return;
+    }
+    await _startRecording();
+  }
 
-    final txService = ref.read(transactionServiceProvider);
-    final txNotifier = ref.read(transactionsProvider.notifier);
-    final stockNotifier = ref.read(stockProvider.notifier);
-    final transcript = _mockTranscript;
-    if (transcript == null) return;
+  Future<void> _confirmAndRecord() async {
+    final text = _transcriptController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() {
+      _isRecordingToBackend = true;
+      _result = null;
+    });
 
     try {
-      final tx = await txService.parseAndRecord(
-        text: transcript,
-        source: 'voice',
-      );
-      txNotifier.add(tx);
-      await stockNotifier.load();
+      final voiceApi = ref.read(voiceApiServiceProvider);
+      final resp = await voiceApi.confirmAndRecord(text: text);
+
+      setState(() {
+        _result = resp;
+      });
+
+      // Refresh app state even if partial failures.
+      await ref.read(stockProvider.notifier).load();
+      await ref.read(transactionsProvider.notifier).load(limit: 10);
+      ref.invalidate(dashboardSummaryProvider);
       ref.invalidate(notificationsProvider);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Recorded: ${parsed.intent}'),
-        ),
+        const SnackBar(content: Text('Recording complete.')),
       );
-      Navigator.of(context).maybePop();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to record.')),
+        const SnackBar(content: Text('Failed to record. Please retry.')),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRecordingToBackend = false;
+        });
+      }
     }
+  }
+
+  void _reset() {
+    setState(() {
+      _isRecording = false;
+      _isTranscribing = false;
+      _isRecordingToBackend = false;
+      _recordedFile = null;
+      _transcribedText = null;
+      _result = null;
+      _transcriptController.text = '';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final recordingColor =
-        _recording ? Colors.redAccent : Theme.of(context).colorScheme.primary;
+        _isRecording ? Colors.redAccent : Theme.of(context).colorScheme.primary;
 
     return Scaffold(
       appBar: AppBar(
@@ -90,31 +175,11 @@ class _VoiceEntryScreenState extends ConsumerState<VoiceEntryScreen> {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         child: Column(
           children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7ED),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFFED7AA)),
+            if (_isTranscribing)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: LinearProgressIndicator(),
               ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline_rounded, color: Color(0xFF9A3412)),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Voice input is still under development. Use tap entry if something looks wrong.',
-                      style: TextStyle(
-                        color: Color(0xFF9A3412),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 14),
             const Text(
               'Hold to record',
@@ -137,7 +202,7 @@ class _VoiceEntryScreenState extends ConsumerState<VoiceEntryScreen> {
                 ),
                 child: Center(
                   child: Icon(
-                    _recording ? Icons.stop_rounded : Icons.mic_rounded,
+                    _isRecording ? Icons.stop_rounded : Icons.mic_rounded,
                     size: 44,
                     color: recordingColor,
                   ),
@@ -146,17 +211,23 @@ class _VoiceEntryScreenState extends ConsumerState<VoiceEntryScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              _recording ? 'Listening…' : 'Tap to start / stop',
+              _isRecording
+                  ? 'Listening…'
+                  : _isTranscribing
+                      ? 'Transcribing…'
+                      : _isRecordingToBackend
+                          ? 'Recording…'
+                          : 'Tap to start / stop',
               style: const TextStyle(
                 color: Color(0xFF6B7280),
               ),
             ),
             const SizedBox(height: 24),
-            if (_mockTranscript != null) ...[
+            if (_transcribedText != null || _transcriptController.text.isNotEmpty) ...[
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Transcript',
+                  'Transcript (edit before confirm)',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -165,53 +236,78 @@ class _VoiceEntryScreenState extends ConsumerState<VoiceEntryScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+              TextField(
+                controller: _transcriptController,
+                minLines: 2,
+                maxLines: 4,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: const Color(0xFFF9FAFB),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
                 ),
-                child: Text(_mockTranscript!),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isRecordingToBackend || _isTranscribing ? null : _reset,
+                      child: const Text('Re-record'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isRecordingToBackend || _isTranscribing ? null : _confirmAndRecord,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        'Confirm',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 18),
             ],
-            if (_parsed != null) ...[
+
+            if (_result != null) ...[
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Detected',
-                  style: TextStyle(
+                  'Recorded ${_result!.recordedCount} items',
+                  style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              _VoiceParsedPreview(parsed: _parsed!),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    _handleConfirm();
+              const SizedBox(height: 10),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: _result!.actions.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, i) {
+                    final a = _result!.actions[i];
+                    return _ActionRow(action: a);
                   },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: const Text(
-                    'Confirm',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
                 ),
               ),
+            ] else ...[
+              const Spacer(),
             ],
           ],
         ),
@@ -220,67 +316,85 @@ class _VoiceEntryScreenState extends ConsumerState<VoiceEntryScreen> {
   }
 }
 
-class _VoiceParsedPreview extends StatelessWidget {
-  const _VoiceParsedPreview({required this.parsed});
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({required this.action});
 
-  final ParsedInputDto parsed;
+  final RecordedAction action;
 
   @override
   Widget build(BuildContext context) {
+    final isOk = action.recorded;
+    final bg = isOk ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2);
+    final border = isOk ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA);
+    final titleColor = isOk ? const Color(0xFF065F46) : const Color(0xFF991B1B);
+
+    String? itemName;
+    int? qty;
+    String? amount;
+
+    final tx = action.transaction;
+    if (tx != null) {
+      itemName = tx['item_name']?.toString();
+      qty = (tx['quantity'] is num)
+          ? (tx['quantity'] as num).toInt()
+          : int.tryParse((tx['quantity'] ?? '').toString());
+      amount = tx['amount']?.toString();
+    } else {
+      itemName = action.parsed['item_name']?.toString();
+      qty = (action.parsed['quantity'] is num)
+          ? (action.parsed['quantity'] as num).toInt()
+          : int.tryParse((action.parsed['quantity'] ?? '').toString());
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: bg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Row(label: 'Type', value: parsed.intent),
-          if (parsed.itemName != null) _Row(label: 'Item', value: parsed.itemName!),
-          if (parsed.quantity != null) _Row(label: 'Qty', value: '${parsed.quantity}'),
-          if (parsed.amount != null) _Row(label: 'Total', value: parsed.amount!.toStringAsFixed(0)),
-        ],
-      ),
-    );
-  }
-}
-
-class _Row extends StatelessWidget {
-  const _Row({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              '$label:',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF6B7280),
+          Row(
+            children: [
+              Icon(
+                isOk ? Icons.check_circle_rounded : Icons.error_rounded,
+                color: titleColor,
               ),
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isOk ? 'Recorded' : 'Failed',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: titleColor,
+                  ),
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: Text(
-              value,
+          const SizedBox(height: 10),
+          if (itemName != null)
+            Text(
+              '${itemName ?? ''}${qty != null ? ' × $qty' : ''}${amount != null ? ' · $amount' : ''}',
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
               ),
             ),
-          ),
+          if (!isOk && action.error != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              action.error!,
+              style: const TextStyle(
+                color: Color(0xFF991B1B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
-

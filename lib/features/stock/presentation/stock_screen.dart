@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:maneja/core/widgets/dashboard_widgets.dart';
 import 'package:maneja/features/home/providers/home_providers.dart';
+import 'package:maneja/features/stock/presentation/add_item_screen.dart';
 import 'package:maneja/models/stock_item.dart';
 
 class StockScreen extends ConsumerWidget {
@@ -19,6 +20,24 @@ class StockScreen extends ConsumerWidget {
         surfaceTintColor: Colors.transparent,
         titleSpacing: 20,
         title: const Text('Stock'),
+        actions: [
+          IconButton(
+            tooltip: 'Add item',
+            icon: const Icon(Icons.add_rounded),
+            onPressed: () async {
+              final created = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => const AddItemScreen(),
+                  fullscreenDialog: true,
+                ),
+              );
+              if (created == true) {
+                ref.invalidate(stockProvider);
+              }
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SafeArea(
         bottom: true,

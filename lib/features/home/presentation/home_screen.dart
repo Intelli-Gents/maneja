@@ -86,7 +86,7 @@ class HomeScreen extends ConsumerWidget {
                         icon: Icons.monetization_on_rounded,
                         iconBg: const Color(0xFFE5F8ED),
                         iconColor: const Color(0xFF18A665),
-                        pillText: '+12%',
+                        pillText: '...%',
                         pillBg: const Color(0xFFE5F8ED),
                         pillFg: const Color(0xFF18A665),
                       ),
@@ -135,7 +135,7 @@ class HomeScreen extends ConsumerWidget {
                     const Expanded(
                       child: DashboardKpiCard(
                         title: 'Debts',
-                        value: '3',
+                        value: '0',
                         unit: 'People',
                         icon: Icons.account_balance_wallet_rounded,
                         iconBg: Color(0xFFFCE8E8),
@@ -258,26 +258,26 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 28),
-              const DashboardSectionHeader(
-                title: 'STOCK IN',
-              ),
-              const SizedBox(height: 12),
-              NotebookListCard(
-                children: [
-                  const NotebookEntryRow(
-                    data: NotebookEntryRowData(
-                      leadingIcon: Icons.local_shipping_rounded,
-                      leadingBg: Color(0xFFEAF1FF),
-                      leadingIconColor: Color(0xFF2563EB),
-                      title: 'Morning delivery',
-                      subtitle: '08:30 AM • 12 items',
-                      trailing: 'Restock',
-                      trailingIsLink: true,
-                    ),
-                    showDivider: false,
-                  ),
-                ],
-              ),
+              // const DashboardSectionHeader(
+              //   title: 'STOCK IN',
+              // ),
+              // const SizedBox(height: 12),
+              // NotebookListCard(
+              //   children: [
+              //     const NotebookEntryRow(
+              //       data: NotebookEntryRowData(
+              //         leadingIcon: Icons.local_shipping_rounded,
+              //         leadingBg: Color(0xFFEAF1FF),
+              //         leadingIconColor: Color(0xFF2563EB),
+              //         title: 'Morning delivery',
+              //         subtitle: '08:30 AM • 12 items',
+              //         trailing: 'Restock',
+              //         trailingIsLink: true,
+              //       ),
+              //       showDivider: false,
+              //     ),
+              //   ],
+              // ),
             ],
           ),
         ),

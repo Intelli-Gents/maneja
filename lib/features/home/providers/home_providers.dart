@@ -8,6 +8,10 @@ import 'package:maneja/services/api_parser_service.dart';
 import 'package:maneja/services/api_notification_service.dart';
 import 'package:maneja/services/api_stock_service.dart';
 import 'package:maneja/services/api_transaction_service.dart';
+import 'package:maneja/services/api_voice_service.dart';
+import 'package:maneja/services/api_items_service.dart';
+import 'package:maneja/services/api_manual_sale_service.dart';
+import 'package:maneja/services/api_agent_chat_service.dart';
 import 'package:maneja/services/transaction_service.dart';
 import 'package:maneja/models/app_notification.dart';
 
@@ -23,12 +27,28 @@ final stockApiServiceProvider = Provider<ApiStockService>((ref) {
   return ApiStockService(ref.watch(apiClientProvider));
 });
 
+final itemsApiServiceProvider = Provider<ApiItemsService>((ref) {
+  return ApiItemsService(ref.watch(apiClientProvider));
+});
+
 final insightsApiServiceProvider = Provider<ApiInsightsService>((ref) {
   return ApiInsightsService(ref.watch(apiClientProvider));
 });
 
 final parserApiServiceProvider = Provider<ApiParserService>((ref) {
   return ApiParserService(ref.watch(apiClientProvider));
+});
+
+final manualSaleApiServiceProvider = Provider<ApiManualSaleService>((ref) {
+  return ApiManualSaleService(ref.watch(apiClientProvider));
+});
+
+final agentChatApiServiceProvider = Provider<ApiAgentChatService>((ref) {
+  return ApiAgentChatService(ref.watch(apiClientProvider));
+});
+
+final voiceApiServiceProvider = Provider<ApiVoiceService>((ref) {
+  return ApiVoiceService(ref.watch(apiClientProvider));
 });
 
 final notificationsServiceProvider = Provider<ApiNotificationService>((ref) {

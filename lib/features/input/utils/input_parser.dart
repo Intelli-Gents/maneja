@@ -12,7 +12,7 @@ class ParsedCommand {
 
   final String raw;
   final ParsedCommandType type;
-  final String source; // tap, text, voice
+  final String source; 
   final String? itemName;
   final int? quantity;
   final double? amount;
@@ -58,7 +58,7 @@ ParsedCommand parseCommand(String input, {required String source}) {
   double? amount;
   String? itemName;
 
-  // Extract numbers: first is quantity, last is amount (if different).
+  
   final numericValues = <int>[];
   for (final t in tokens) {
     final value = int.tryParse(t.replaceAll(RegExp(r'[^0-9]'), ''));
@@ -74,7 +74,7 @@ ParsedCommand parseCommand(String input, {required String source}) {
     }
   }
 
-  // Determine item name: words between verb and amount-ish tokens.
+  
   if (tokens.length >= 2) {
     int startIndex = 1;
     int endIndex = tokens.length;

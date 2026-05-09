@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:maneja/features/agent/presentation/agent_chat_screen.dart';
 
 class AppBottomNavShell extends StatelessWidget {
   const AppBottomNavShell({
@@ -18,7 +19,28 @@ class AppBottomNavShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: body,
+        child: Stack(
+          children: [
+            body,
+            Positioned(
+              right: 16,
+              bottom: 92,
+              child: FloatingActionButton(
+                heroTag: 'maneja_agent_fab',
+                elevation: 8,
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AgentChatScreen(),
+                      fullscreenDialog: true,
+                    ),
+                  );
+                },
+                child: const Icon(Icons.chat_bubble_rounded),
+              ),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: onRecordPressed,
